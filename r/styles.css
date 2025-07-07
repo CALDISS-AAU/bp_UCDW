@@ -1,0 +1,9 @@
+/* Set base serif font for slide content */
+body {
+  font-family: 'Georgia', serif;
+}
+
+/* Apply same font to gt tables */
+.gt_table {
+  font-family: 'Georgia', serif;
+}
