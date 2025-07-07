@@ -1,0 +1,13 @@
+pandas
+tqdm
+gensim
+sentence-transformers
+scikit-learn
+spacy
+openpyxl
+Spire.Doc
+bertopic
+pysbd
+plotnine
+umap-learn
+adjustText

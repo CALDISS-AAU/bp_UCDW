@@ -1,0 +1,7 @@
+data/
+doc/
+Trash/
+models/
+output/
+topic_output/
+*__pycache__*
