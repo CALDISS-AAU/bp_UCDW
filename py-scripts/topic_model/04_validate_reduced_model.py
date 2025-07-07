@@ -18,7 +18,7 @@ from umap import UMAP
 project_dir = '/work/UCDW'
 data_dir = join(project_dir, 'data')
 workd_dir = join(data_dir, 'work')
-tm_data_dir = join(data_dir, 'TM_data_final')
+tm_data_dir = join(data_dir, 'TM_data')
 output_dir = join(project_dir, 'topic_output')
 os.makedirs(output_dir,exist_ok=True)
 modules_dir = join(project_dir, 'modules')

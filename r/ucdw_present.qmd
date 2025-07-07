@@ -33,7 +33,7 @@ library(ggrepel)
 extrafont::loadfonts(quiet = TRUE)
 
 #setwd('/work/UCDW')
-setwd('/work/ucdw')
+setwd('/work/UCDW')
 
 ## text data
 convos_df <- read_csv('data/work/bv_convos_all.csv')
@@ -42,7 +42,8 @@ convos_df <- read_csv('data/work/bv_convos_all.csv')
 keyws_data <- read_csv('output/for_presentation/word_count.csv')
 
 ## topics
-topic_df <- read_csv('output/for_presentation/OG_data_plus_topics.csv')
+#topic_df <- read_csv('output/for_presentation/OG_data_plus_topics.csv')
+topic_df <- read_csv('/work/UCDW/data/bv_df_topics.csv')
 
 ## plot data
 jac_ind <- read_csv('output/embeddings/jaccard_indices.csv')
@@ -144,20 +145,16 @@ topic_df_g <- topic_df |>
 
 ## Hvad har vi lavet?
 
-:::: {.columns}
-
+::::: columns
 ::: {.column width="50%"}
-
 **Foreløbig emneanalyse**
 
 -   Vi kan umiddelbart se, at tematikker varierer på tværs af platforme
 
 -   Analysemodel skal finjusteres yderligere for at udlede meningsfulde emner
-
 :::
 
 ::: {.column width="50%"}
-
 **Simple word embeddings**
 
 -   Vi har modeller for hhv. drenge og piger, som vi kan udforske semantiske relationer i
@@ -165,26 +162,19 @@ topic_df_g <- topic_df |>
 -   Indtil videre undersøgt forskel ved brug af specifikke trivsels-relaterede nøgleord
 
 -   Resultater er lige nu ikke pålidelige; sårbare over for små ændringer i data
-
 :::
-
-::::
+:::::
 
 ## Om data
 
-
-:::: {.columns}
-
+::::: columns
 ::: {.column width="50%"}
-
 -   Samtaledata (chat + sms), brevkasse og fem fokusgruppeinterviews
 
 -   Beskrivende statistikker dækker samtale- og brevkassedata
-
 :::
 
 ::: {.column width="50%"}
-
 ```{r desc}
 
 summaries <- convos_g_df |> 
@@ -226,12 +216,8 @@ summary_tbl |>
   tab_header(title = "Beskrivende statistikker")
 
 ```
-
 :::
-
-::::
-
-
+:::::
 
 ## Fordeling af data
 
@@ -324,11 +310,20 @@ p <- wordcloud2(data = data.frame(word = keyws_use,
            shuffle = FALSE)
 
 ```
+
 ![](topic-keyws_wordcloud.png)
 
 ## Fordeling af emner på tværs af kanaler
 
 ```{r topicvis}
+
+top_topics <- topic_df_g |>
+  group_by(topic) |>
+  mutate(topic_n = sum(n)) |>
+  ungroup() |>
+  distinct(topic, topic_n) |>
+  slice_max(order_by = topic_n, n = 20) |>
+  pull(topic)
 
 topic_df_g |> 
   mutate(requester_channel = factor(case_match(
@@ -338,12 +333,14 @@ topic_df_g |>
     "sms" ~ "SMS",
     "webchat" ~ "Webchat"
   ), levels = c("Brevkasse", "SMS", "Webchat", "Interview"))) |> 
-  ggplot(aes(x = topic, y = pct, fill = requester_channel)) +
+  filter(topic %in% top_topics) |>
+  ggplot(aes(x = as.factor(topic), y = pct, fill = requester_channel)) +
     geom_bar(stat = 'identity') + 
-    scale_y_continuous(limits = c(0, 0.075), labels = percent) + 
+    scale_y_continuous(limits = c(0, 0.10), labels = percent) + 
     facet_wrap(~requester_channel) + 
     labs(x = "Emner", y = "Pct. af data",
-         caption = "Note: Ét topic ekskluderet, som indfanger 40% af interviewdata") +
+         #caption = "Note: Ét topic ekskluderet, som indfanger 40% af interviewdata"
+         ) +
     guides(fill = "none") + 
     theme_use + 
     theme(plot.caption = element_text(hjust = 1, face = "italic", color = "darkred"))
@@ -362,10 +359,8 @@ topic_df_g |>
 
 ## Data brugt til embedding modeller
 
-:::: {.columns}
-
+::::: columns
 ::: {.column width="50%"}
-
 -   Bruger kun chat og sms
 -   Data filtreret til alder 10-16 samt frasorterer faste brugere
 -   Bruger kun beskeder fra brugeren
@@ -374,12 +369,9 @@ topic_df_g |>
     -   Konvertere til ordstamme
     -   Udelade stopord
 -   Tre modeller: alle, drenge, piger
-
 :::
 
 ::: {.column width="50%"}
-
-
 ```{r embedtokens}
 
 # Build summary table
@@ -411,10 +403,8 @@ summary_tbl_emb |>
 
 
 ```
-
 :::
-
-::::
+:::::
 
 ## Embedding modeller - baggrund
 
