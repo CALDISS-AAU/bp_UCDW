@@ -28,9 +28,9 @@ with open(join(corpus_dir, 'tokenized_corpus_female.json'), 'r') as f:
 
 ## TRAIN MODELS
 # Train Word2Vec model using skip-gram (sg=1)
-model_a = Word2Vec(sentences=tokenized_corpus_all, vector_size=100, window=10, sg=1, min_count=5, workers=8)
-model_m = Word2Vec(sentences=tokenized_corpus_male, vector_size=100, window=10, sg=1, min_count=5, workers=8)
-model_f = Word2Vec(sentences=tokenized_corpus_female, vector_size=100, window=10, sg=1, min_count=5, workers=8)
+model_a = Word2Vec(sentences=tokenized_corpus_all, vector_size=300, window=50, sg=1, min_count=5, workers=8)
+model_m = Word2Vec(sentences=tokenized_corpus_male, vector_size=300, window=50, sg=1, min_count=5, workers=8)
+model_f = Word2Vec(sentences=tokenized_corpus_female, vector_size=300, window=50, sg=1, min_count=5, workers=8)
 
 # Save models
 model_a.save(join(models_dir, "bv_word2vec_all.model"))

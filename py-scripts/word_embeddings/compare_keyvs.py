@@ -72,7 +72,8 @@ random.seed(seed_use)
 
 ## BENCH KEYWS
 #bench_kws = random.sample(keyws, 10)
-bench_kws = ['glad', 'bange', 'høre', 'ven', 'veninde', 'hjem', 'skole', 'klasse']
+#bench_kws = ['glad', 'bange', 'høre', 'ven', 'veninde', 'hjem', 'skole', 'klasse']
+bench_kws = ['skole', 'lærer', 'motivation', 'forælder', 'kæreste', 'ven', 'veninde', 'sur', 'ensom']
 
 ## READ MODELS
 # Paths
