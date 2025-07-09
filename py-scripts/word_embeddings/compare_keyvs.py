@@ -73,7 +73,7 @@ random.seed(seed_use)
 ## BENCH KEYWS
 #bench_kws = random.sample(keyws, 10)
 #bench_kws = ['glad', 'bange', 'høre', 'ven', 'veninde', 'hjem', 'skole', 'klasse']
-bench_kws = ['skole', 'lærer', 'motivation', 'forælder', 'kæreste', 'ven', 'veninde', 'sur', 'ensom']
+bench_kws = ['skole', 'klasse', 'lærer', 'forælder', 'far', 'mor', 'hjem', 'hjemme', 'kæreste', 'ven', 'veninde']
 
 ## READ MODELS
 # Paths
@@ -91,7 +91,7 @@ all_vectors = []
 
 # Process each model
 for model_name, model in models.items():
-    for keyword in keyws:
+    for keyword in bench_kws:
         if keyword not in model.wv:
             continue
         # Keyword vectors
@@ -214,6 +214,46 @@ df = pd.DataFrame(plot_data)
 
 # Save
 df.to_csv(join(output_dir, 'plotting_data_keywords_compare_gender.csv'), index=False)
+
+
+# SIMILAR KEYWORDS BASED ON THRESHOLD
+models_to_use = ['model_f', 'model_m']
+
+# Create filtered model dict
+models_use = {name: models[name] for name in models_to_use}
+
+# Collect plotting data
+plot_data = []
+
+for keyword in bench_kws:
+    plot_data.append({
+        'word': keyword,
+        'keyword': keyword,
+        'model': 'keyword',
+        'similarity': 0.0,
+        'is_keyword': True
+    })
+
+# Add similar words from each selected model
+for model_name, model in models_use.items():
+    for keyword in bench_kws:
+        if keyword not in model.wv:
+            continue
+        similar_words = model.wv.most_similar(keyword, topn=10)
+        for similar_word, similarity in similar_words:
+            plot_data.append({
+                'word': similar_word,
+                'keyword': keyword,
+                'model': model_name,
+                'similarity': similarity,
+                'is_keyword': False
+            })
+
+# Create DataFrame
+df = pd.DataFrame(plot_data)
+
+# Save
+df.to_csv(join(output_dir, 'plotting_data_keywords_compare_gender_network.csv'), index=False)
 
 ## Plot
 #p = (
