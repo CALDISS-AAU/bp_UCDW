@@ -6,6 +6,10 @@ from itertools import chain
 from datetime import datetime
 import re
 
+"""
+Standardizes conversation data to shared structure and column names.
+"""
+
 ## PATHS
 project_dir = '/work/UCDW'
 data_dir = join(project_dir, 'data')
