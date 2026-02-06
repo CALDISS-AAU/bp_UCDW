@@ -6,6 +6,12 @@ import random
 import umap
 import numpy as np
 
+"""
+Based on trained static embeddings (word2vec), derive main semantic associations across gender. 
+Output: output/embeddings/keyword_projections.csv - Project defined keywords to 2D UMAP across genders
+Output: output/embeddings/plotting_data_keywords_compare_gender_network.csv - Based on defined keywords, derive top 10 most similar words across genders
+"""
+
 ## PATHS
 project_dir = '/work/UCDW'
 data_dir = join(project_dir, 'data')
@@ -111,62 +117,6 @@ df[['x', 'y']] = pd.DataFrame(reducer.fit_transform(df['vector'].tolist()), inde
 # Store as csv
 df[['keyword', 'model', 'x', 'y']].to_csv(join(output_dir, 'keyword_projections.csv'), index=False)
 
-## Plot using plotnine
-#p = (
-#    ggplot(df, aes(x='x', y='y')) +
-#    geom_point(aes(color='model'), size=3, alpha=0.8) +
-#    geom_text(aes(label='word'), size=8, va='bottom', ha='right') +
-#    geom_segment(
-#        data=df[df['model'] != 'Keyword'],
-#        mapping=aes(x='x', y='y', xend='xend', yend='yend', group='word'),
-#        color='gray', linetype='dashed', size=0.4
-#    ) +
-#    theme_minimal() +
-#    ggtitle("Nearest Neighbors by Embedding Model") +
-#    theme(figure_size=(12, 10))
-#)
-#
-## Prepare lines from similar words to keywords (per model)
-#keywords_df = df[df['is_keyword']].set_index(['keyword', 'model'])[['x', 'y']]
-#df = df.merge(keywords_df, left_on=['keyword', 'model'], right_index=True, suffixes=('', '_keyword'))
-#df['xend'] = df['x_keyword']
-#df['yend'] = df['y_keyword']
-#
-## Re-plot with updated df
-#
-#adjust_text_dict = {
-#    'expand_points': (2, 2),
-#    'arrowprops': {
-#        'arrowstyle': '->',
-#        'color': 'black'
-#    }
-#}
-#
-#p = (
-#    ggplot(df, aes(x='x', y='y')) +
-#    geom_point(aes(color='model', shape='is_keyword'), size=4, alpha=0.9) +
-#    geom_text(aes(label='word'), size=8, va='bottom', ha='right', adjust_text = adjust_text_dict) +
-#    #geom_segment(
-#    #    data=df[df['is_keyword'] == False],
-#    #    mapping=aes(x='x', y='y', xend='xend', yend='yend'),
-#    #    color='gray', linetype='dashed', size=0.3
-#    #) +
-#    scale_color_manual(values={
-#        'model_m': '#1f77b4',
-#        'model_f': '#2ca02c',
-#        'model_a': '#d62728',
-#        'Keyword': 'black'
-#    }) +
-#    scale_shape_manual(values={True: 'o', False: 'x'}) +
-#    theme_minimal() +
-#    ggtitle("Nearest Neighbors by Embedding Model") +
-#    theme(figure_size=(12, 10))
-#)
-#
-## store plot
-#ggsave(p, filename=join(output_dir, "embedding_neighbors.png"), dpi=300)
-
-
 ## V2
 models_to_use = ['model_f', 'model_m']
 
@@ -254,33 +204,3 @@ df = pd.DataFrame(plot_data)
 
 # Save
 df.to_csv(join(output_dir, 'plotting_data_keywords_compare_gender_network.csv'), index=False)
-
-## Plot
-#p = (
-#    ggplot() +
-#    #geom_point(aes(color='model', shape='is_keyword'), size=4, alpha=0.9) +
-#    geom_text(
-#        data=df[df['is_keyword'] == True],
-#        mapping=aes(label='word', x='x', y='y'),
-#        size=8,
-#        va='bottom') + 
-#    geom_text(
-#        data=df[df['is_keyword'] == False],
-#        mapping=aes(label='word', x='x', y='y', color='model'), 
-#        size=8, 
-#        va='bottom', 
-#        adjust_text = adjust_text_dict) + 
-#    scale_color_manual(values={
-#        'model_f': '#2ca02c',
-#        'model_m': '#d62728',
-#        'keyword': 'black'
-#    }) +
-#    scale_shape_manual(values={True: 'o', False: 'x'}) +
-#    geom_vline(xintercept=0, linetype='dashed', color='gray') +
-#    theme_minimal() +
-#    ggtitle("Cosine Distance of Nearest Neighbors (model_f: left, model_a: right)") +
-#    theme(figure_size=(14, 8))
-#)
-#
-## Save
-#ggsave(p, filename=join(output_dir, "embedding_cosine_distance-2.png"), dpi=300)

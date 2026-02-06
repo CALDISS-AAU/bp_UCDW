@@ -2,8 +2,8 @@ library(tidyverse)
 library(knitr)
 library(ggplot2)
 library(jsonlite)
-library(gt)
-library(gtsummary)
+#library(gt)
+#library(gtsummary)
 library(scales)
 library(patchwork)
 library(ggrepel)
@@ -11,9 +11,11 @@ library(tidygraph)
 library(ggraph)
 library(igraph)
 library(dplyr)
+library(ggtext)
+library(autograph)
 
-#setwd('/work/UCDW')
-setwd("/home/kgk/repos/bp_UCDW")
+setwd('/work/UCDW')
+#setwd("/home/kgk/repos/bp_UCDW")
 
 ## plot data
 keyws_proj <- read_csv('output/embeddings/keyword_projections.csv')
@@ -71,24 +73,30 @@ keyws_net_graph_df <- keyws_net |>
   )) |> 
   select(from, to, type)
 
+# words to exclude in labels
+labels_exclude <- c(
+  # almindelige funktions-/fyldord
+  "bare", "helt", "dertil", "efterhånden", "endelig", "muligt",
+  "modsat", "korrekt",
+  
+  # tal / ord for tal
+  "12.", "9.", "7.", "syvende", "halvanden",
+  
+  # forkortelser / symbol-lignende
+  "f.x",
+  
+  # meget generelle, lavt informationsindhold
+  "nylig", "april", "imorges", "folk"
+)
+
+# keywords used for finding neighbours
+keyws_main <- unique(keyws_net$keyword)
+
+# create graph
 graph <- tbl_graph(edges = keyws_net_graph_df, directed = TRUE)
 
-ggraph(graph, layout = 'fr') +
-  geom_edge_link(aes(color = type), 
-      arrow = arrow(length = unit(4, 'mm')), 
-      end_cap = circle(3, 'mm'), 
-      width = 1.2) +
-  geom_node_point(size = 5, color = "black") +
-  geom_node_text(aes(label = name), vjust = -1) +
-  scale_edge_colour_brewer(type = "qual", palette = "Dark2") + 
-  theme_light() +
-  facet_wrap(~type)
-  #labs(edge_color = "Relationship Type") +
-  ggtitle("Custom-Coloured Network Visualization")
-
-
 # Compute global layout
-layout_all <- create_layout(graph, layout = 'fr')
+layout_all <- create_layout(graph, layout = 'stress')
 nodes_df <- layout_all %>% as_tibble() %>% select(name, x, y)
 
 # filter edges
@@ -115,33 +123,73 @@ edges_long <- keyws_net_graph_df %>%
 graph_vis_d <- ggplot() +
   geom_segment(
     data = filter(
-      edges_long, to %in% nodes_d), 
+      edges_long, to %in% nodes_d, !to %in% labels_exclude), 
     aes(x = x_from, y = y_from, xend = x_to, yend = y_to),
     colour = "darkorange",
     arrow = arrow(angle = 20, length = unit(3, 'mm')), size = 0.5) +
   geom_point(data = 
-    filter(nodes_df, name %in% nodes_d),
-   aes(x = x, y = y), size = 4, color = "black") +
-  geom_text(data = 
-    filter(nodes_df, name %in% nodes_d), 
-  aes(x = x, y = y, label = name), vjust = -1) +
-  theme_void() #+
-  #labs(title = "Faceted Network by Type", color = "Edge Type")
+    filter(nodes_df, name %in% nodes_d, !name %in% labels_exclude),
+   aes(x = x, y = y), size = 2, color = "black") +
+  geom_text_repel(data = 
+    filter(nodes_df, name %in% nodes_d, !name %in% labels_exclude, !name %in% keyws_main), 
+  aes(x = x, y = y, label = name), max.overlaps = 10) +
+  geom_label_repel(data = 
+    filter(nodes_df, name %in% keyws_main), 
+  aes(x = x, y = y, label = name), max.overlaps = 10) +
+  theme_void() +
+  labs(title = "Drenge") + 
+  theme(
+    plot.title = element_textbox(
+      fill = "darkgrey", 
+      colour = "white", 
+      box.colour = "black",
+      hjust = 0.5,
+      face = "bold",
+      size = 14,
+      linetype = "solid",
+      padding = unit(c(0.02,0.15,0.02,0.15), "npc")
+  ))
+  
 
 graph_vis_p <- ggplot() +
   geom_segment(
     data = filter(
-      edges_long, to %in% nodes_p), 
+      edges_long, to %in% nodes_p, !to %in% labels_exclude), 
     aes(x = x_from, y = y_from, xend = x_to, yend = y_to),
     colour = "purple",
     arrow = arrow(angle = 20, length = unit(3, 'mm')), size = 0.5) +
-  geom_point(data = 
-    filter(nodes_df, name %in% nodes_p),
-   aes(x = x, y = y), size = 4, color = "black") +
-  geom_text(data = 
-    filter(nodes_df, name %in% nodes_p), 
-  aes(x = x, y = y, label = name), vjust = -1) +
-  theme_void() #+
-  #labs(title = "Faceted Network by Type", color = "Edge Type")
+  geom_point(
+    data = filter(nodes_df, name %in% nodes_p, !name %in% labels_exclude),
+   aes(x = x, y = y), size = 2, color = "black") +
+  geom_text_repel(data = 
+    filter(nodes_df, name %in% nodes_p, !name %in% labels_exclude, !name %in% keyws_main), 
+  aes(x = x, y = y, label = name), max.overlaps = 10) +
+  geom_label_repel(data = 
+    filter(nodes_df, name %in% keyws_main), 
+  aes(x = x, y = y, label = name), max.overlaps = 10) +
+  theme_void() +
+  labs(title = "Piger") + 
+  theme(
+    plot.title = element_textbox(
+      fill = "darkgrey", 
+      colour = "white", 
+      box.colour = "black",
+      hjust = 0.5,
+      face = "bold",
+      size = 14,
+      linetype = "solid",
+      padding = unit(c(0.02,0.15,0.02,0.15), "npc")
+  ))
 
-combined_plot = graph_vis_d + graph_vis_p
+combined_plot <- graph_vis_d + graph_vis_p
+
+ggsave(
+  file.path('output', 'plots', 'embeddings_word-relations_compare.png'),
+  plot = combined_plot,
+  width = 8,
+  height = 5,
+  unit = "in",
+  device = "png",
+  dpi = 300,
+  scale = 1.5
+)

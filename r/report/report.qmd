@@ -1,0 +1,468 @@
+---
+title: "Foreløbige analyser af samtaledata fra Børns Vilkår"
+subtitle: "WP1 af 'Understanding Childrens' Discourses on Well-Being'"
+author:
+  - name: "Kristian G. Kjelmann"
+    affiliation: "CALDISS, Det Humanistiske og Samfundsvidenskabelige Fakultet, Aalborg Universitet"
+  - name: "Matias K. Appel"
+    affiliation: "CALDISS, Det Humanistiske og Samfundsvidenskabelige Fakultet, Aalborg Universitet"
+  - name: "Josefine M. Christensen"
+    affiliation: "CALDISS, Det Humanistiske og Samfundsvidenskabelige Fakultet, Aalborg Universitet"
+date: "Februar 2026"
+language:
+  crossref-fig-title: "Figur"
+  crossref-tbl-title: "Tabel"
+  fig-prefix: "Figur"
+  tbl-prefix: "Tabel"
+  toc-title-document: "Indholdsfortegnelse"
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    fig-width: 8
+    fig-height: 5
+    fig-pos: H
+execute:
+  echo: false
+  error: false
+  warning: false
+editor: visual
+---
+
+```{r setup}
+#| output: false
+
+#install.packages(c('tidyverse', 'knitr', 'jsonlite', 'gt', 'gtsummary', 'patchwork', 'wordcloud', 'wordcloud2', 'ggrepel', 'ggplot2', 'extrafont'))
+
+library(tidyverse)
+library(knitr)
+library(ggplot2)
+library(jsonlite)
+library(gt)
+library(gtsummary)
+library(scales)
+library(patchwork)
+library(wordcloud2)
+library(ggrepel)
+library(tidygraph)
+library(ggraph)
+library(igraph)
+library(ggtext)
+
+extrafont::loadfonts(quiet = TRUE)
+
+#setwd('/work/UCDW')
+setwd('/work/UCDW')
+
+## text data
+convos_df <- read_csv('data/work/bv_convos_all.csv')
+
+## keywords
+keyws_data <- read_csv('output/for_presentation/word_count.csv')
+
+## topics
+#topic_df <- read_csv('output/for_presentation/OG_data_plus_topics.csv')
+topic_df <- read_csv('/work/UCDW/data/bv_df_topics.csv')
+
+## plot data
+jac_ind <- read_csv('output/embeddings/jaccard_indices.csv')
+jac_sum <- read_csv('output/embeddings/jaccard_summary_statistics.csv')
+keyws_proj <- read_csv('output/embeddings/keyword_projections.csv')
+keyws_compare <- read_csv('output/embeddings/plotting_data_keywords_compare_gender.csv')
+
+## corpus
+corpus_all <- fromJSON('data/work/we_corpus/tokenized_corpus_all.json')
+corpus_female <- fromJSON('data/work/we_corpus/tokenized_corpus_female.json')
+corpus_male <- fromJSON('data/work/we_corpus/tokenized_corpus_male.json')
+
+## theme
+theme_use <- theme_minimal(base_family = "serif",
+                           base_size = 15)
+
+```
+
+```{r handling}
+
+# data handling
+convos_df <- convos_df |>
+  mutate(requester_age = as.numeric(str_extract(requester_age_name, '\\d+')),
+         gender = case_match(
+           requester_gender_name,
+           c('Dreng', 'Ung mand') ~ 'male',
+           c('Pige', 'Ung kvinde') ~ 'female',
+           c('Ukendt', 'Ønsker ikke oplyse køn', 'Ønsker ikke at oplyse', 'Anden kønsidentitet') ~ 'other'
+         ),
+         requester_age = ifelse(is.na(requester_age), 
+                                requester_age_selfreported, 
+                                requester_age),
+         gender = case_match(
+           requester_gender_selfreported,
+           'Dreng' ~ 'male',
+           c('Pige', 'Ung kvinde') ~ 'female',
+           .default = gender
+         ),
+         gender = ifelse(is.na(gender), 'other', gender)) |> 
+  filter(!(is_fast_bruger),
+         #requester_channel != 'letter', 
+         is_incoming, 
+         !(is.na(message))) |> 
+  filter(requester_age %in% c(10:16))
+
+# combine chats
+convos_g_df <- convos_df |> 
+  group_by(conversation_code) %>%
+  summarise(
+    chat = str_c(message, collapse = ". "),
+    .groups = "drop"
+  ) |> 
+  left_join(select(convos_df, conversation_code, requester_age, 
+                   gender, last_contact_dt, requester_channel), 
+            by = 'conversation_code', multiple = 'first')
+
+```
+
+```{r handlekw}
+
+wildcards <- c('ærlig', 'år', 'altså', 'går', 'ik', 'sker', 'generelt', 'komme', 'begynde', 'besked', 'dreng \\d+', 'pige \\d+', 'egentlig', 'loc', 'måned', 'uge', 'snart')
+
+wildcards_pattern <- str_c(wildcards, collapse = "|")
+
+strips <- c('^bare', '^fik', '^når')
+
+strips_p <- str_c(strips, collapse = "|")
+
+verbatims <- c('åbenbart', 'åbent', 'alt', 'ca måneder', 'dagligt', 'desværre', 'efterfølgende', 'fået afvide', 'fået masse', 'fået vide', 'far sagt', 'får sagt', 'fedt', 'fjerne', 'fjernet', 'here', 'hey', 'hi', 'hmm', 'holdt', 'hører', 'hov', 'idk', 'især når', 'me', 'mhm', 'næ', 'of', 'oh', 'øhm', 'org', 'osv føler', 'præcist', 'sendt', 'sidste to', 'that', 'this', 'vel prøve', 'with')
+
+
+keyws_use <- keyws_data |> 
+  select(word, count) |> 
+  filter(!(word %in% verbatims),
+         !(str_detect(word, wildcards_pattern))) |> 
+  mutate(word = str_replace(word, strips_p, "")) |> 
+  distinct(word) |> 
+  pull(word)
+```
+
+```{r handletopics}
+
+topic_df_g <- topic_df |> 
+  left_join(select(convos_df, conversation_code, requester_channel), 
+            by = c("id" = "conversation_code"),
+            multiple = "first") |> 
+  mutate(
+    requester_channel = ifelse(
+      is.na(requester_channel), 
+      "interview", 
+      requester_channel)) |> 
+  filter(topic != -1) |> 
+  group_by(topic, requester_channel) |> 
+  count() |> 
+  ungroup() |> 
+  group_by(requester_channel) |> 
+  mutate(pct = n / sum(n))
+```
+
+# Baggrund
+
+Denne rapport samler arbejdet i WP1 af pilotstudiet "Understanding Childrens' Discourses on Well-Being", 2025. Arbejdspakken havde til formål at foretage indledende analyser af samtaledata fra Børns Vilkår. Følgende gennemgår data, metoder og foreløbige resultater. Analyserne har leveret indsigter, der udgjorde grundlag for senere forskningsansøgninger. Der blev foretaget to analyser: (1) en foreløbig emneanalyse på tværs af kanaler og (2) analyse af semantiske relationer i sprogbruget. Resultaterne peger på et distinkt semantisk sprogbrug knyttet til bestemte kernepersoner i børns omgangskreds (forældre, venner, skolelærere) samt deres primære sociale arenaer (fx skole, hjem). Der er indikationer på variationer mellem køn, men robustheden er endnu ikke tilstrækkelig til at drage stærke konklusioner.
+
+# Metoden generelt
+
+Arbejdet består af to parallelle analyser. For det første en emneanalyse, hvor der undersøges dominerende tematikker i det, som børn kontakter Børnetelefonen om. Hertil er det undersøgt, om tematikker varierer på tværs af platforme. For det andet en undersøgelse af "semantiske relationer" i det, som der bliver talt om, som er udledt via såkaldte "word embeddings"-modeller. Denne analyse involverer at træne modeller baseret på ord, der optræder i kontekst, for at udforske ligheder og forskelle i, hvordan bestemte roller, personer og arenaer bliver italesat. Her har der været særligt opmærksomhed på forskelle mellem piger og drenge. De foreløbige resultater indikerer, at modellen kan fange forskelle, men at resultaterne i øjeblikket er sårbare over for små ændringer i data og derfor ikke er stabile nok til fortolkning.
+
+# Om data
+
+Datagrundlaget består af samtaledata fra chat og sms, brevkassebeskeder samt fem fokusgruppeinterviews. Fokusgruppeinterviews er inddraget for at få indikation af, om det, som børn italesætter, når de kontakter Børnetelefonen, også fremgår i kvalitative opfølgninger. De beskrivende statistikker af @tbl-summary samtale- og brevkassedata. Data er filtreret til brugere i alderen 10-16 år. Såkaldte "faste brugere" og beskeder fra rådgiver er frasorteret. Samtaler er sammenlagt på tværs af beskeder, så hver samtale fremstår som én samlet tekst, der kan analyseres ensartet. Der er arbejdet med samtale- og brevkasse data fra Q4 2024 og Q1 2025.
+
+```{r}
+#| tbl-cap: "Beskrivende statistikker"
+#| label: tbl-summary
+
+summaries <- convos_g_df |> 
+  summarise(total_chats = n(),
+            total_tokens = sum(str_count(chat, "\\S+")),
+            mean_chat_length = mean(str_count(chat, "\\S+")),
+            first_chat = as.Date(min(last_contact_dt, na.rm = TRUE)),
+            last_chat = as.Date(max(last_contact_dt, na.rm = TRUE)))
+  
+
+# Build summary table
+summary_tbl <- tibble(
+  Summary = c(
+    "Antal chats",
+    "Total antal tokens",
+    "Gns. antal tokens per chat",
+    "Dato for første chat",
+    "Dato for sidste chat"
+  ),
+  Value = c(
+    formatC(summaries$total_chats[1], format = "d", big.mark = ".", decimal.mark = ","),
+    formatC(summaries$total_tokens[1], format = "d", big.mark = ".", decimal.mark = ","),
+    formatC(summaries$mean_chat_length[1], format = "f", digits = 2, 
+            big.mark = ".", decimal.mark = ","),
+    as.character(summaries$first_chat[1]),
+    as.character(summaries$last_chat[1])
+  )
+)
+
+# Format with gt and custom number formatting
+summary_tbl |>
+  gt() |>
+  opt_table_font(
+    font = list("serif")) |> 
+  cols_label(
+    Summary = "",
+    Value = ""
+  ) |> 
+  tab_header(title = "Beskrivende statistikker")
+
+```
+
+# Fordeling af data
+
+For at forstå hvem materialet repræsenterer, beskriver vi populationen via fordeling af samtaler på kanaler, køn og alder. @fig-pop-dist viser et samlet overblik over fordeling i brug af kanal, kønsfordeling samt aldersfordeling. Fordelingen er tydeligt skævvredet ang. køn med ca. 80% piger. Webchat er den mest populære platform (50 %), og det er aldersgruppen 13-15, som er mest tilstedeværende i materialet.
+
+```{r}
+#| fig-cap: "Fordeling af samtaler efter kanal, køn og alder."
+#| label: fig-pop-dist
+
+p1 <- convos_g_df |> 
+  count(requester_channel) |> 
+  mutate(pct = n/sum(n)) |> 
+  ggplot(aes(x = requester_channel, y = pct)) + 
+  geom_bar(stat = 'identity') +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = "Kanal", 
+       y = "Procent", 
+       title = "Fordeling af samtaler over kanaler") + 
+  theme_use
+
+p2 <- convos_g_df |> 
+  mutate(gender = case_match(
+    gender,
+    "male" ~ "Dreng",
+    "female" ~ "Pige",
+    "other" ~ "Andet eller uoplyst køn"
+  )) |> 
+  count(gender) |> 
+  mutate(pct = n/sum(n)) |> 
+  ggplot(aes(x = gender, y = pct)) + 
+  geom_bar(stat = 'identity') +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = "Køn", 
+       y = "Procent", 
+       title = "Fordeling af samtaler over køn") +
+  theme_use
+
+p3 <- convos_g_df |> 
+  count(requester_age) |> 
+  mutate(pct = n/sum(n)) |> 
+  ggplot(aes(x = requester_age, y = pct)) + 
+  geom_bar(stat = 'identity') +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_x_continuous(breaks = c(10:16), labels = c(10:16)) + 
+  labs(x = "Alder", 
+       y = "Procent", 
+       title = "Fordeling af samtaler over alder") +
+  theme_use
+
+combined <- (p1 + p2) / p3
+
+combined +
+  theme_use
+
+```
+
+# Emneanalyse
+
+## Baggrund og metode
+
+Emneanalysen bygger på samtale-, brevkasse- og interviewdata, som er inddelt i lige store tekststykker på cirka 150 tegn. Data er filtreret til aldersgruppen 10-16 år og renset for faste brugere. For samtaledata betyder det, at vi kun bruger brugerens beskeder og frasorterer meget korte beskeder som "hej" og "nej". Hvert tekststykke konverteres til en numerisk repræsentation ved hjælp af en eksisterende sprogmodel ("sentence transformer"), hvor hvert stykke tekst tildeles en numerisk og sammenlignelig repræsentation. Derefter anvender vi klyngeanalyse (HDBSCAN) til at gruppere tekststykker efter indhold, hvilket gav omkring 120 emner. Disse blev efterfølgende manuelt inspiceret og samlet på baggrund af en kvalitativ vurdering, hvilket reducerede antallet til 54 emner.
+
+## Nøgleord på tværs af data
+
+For at få et første indtryk af emner i materiale, udledes de væsentligste nøgleord for hver af de 54 emner. Meget almindelige ord og tekniske støjord fjernes. @fig-keywords viser centrale nøgleord for emnerne, hvor størrelsen angiver forekomst i materialet.
+
+```{r viskeyws}
+
+#wordcloud(words = keyws_use, 
+#          freq = rep(1, length(keyws_use)), 
+#          min.freq = 1, 
+#          random.order = FALSE,
+#          rot.per = 0, 
+#          scale = c(0.4, 0.4))
+
+p <- wordcloud2(data = data.frame(word = keyws_use, 
+                             freq = rep(1, length(keyws_use))),
+           size = 0.1,
+           fontWeight = 'normal', 
+           shuffle = FALSE)
+# saved as topic-keyws_wordcloud.png
+```
+
+![Nøgleordsprofil på tværs af emner. Størrelse angiver forekomst.](images/combined_cloud2.png){#fig-keywords}
+
+## Fordeling af emner på tværs af kanaler
+
+@fig-topic-density viser fordelingen af alle emner på tværs af kanaler. Dog er et enkelt emne udeladt, da det alene udgjort 40 % af interviewdata. Dette emne er derfor frasorteret for bedre at kunne sammenligne de resterende emner. Resultaterne indikerer for det første en tydelig prævalens af bestemte emner. Derudover viser figuren, at fordelingen af emner ligner hinanden på tværs af kanaler (med undtagelse af interviewdata, der som nævnt var domineret af ét emne, som her er ekskluderet).
+
+Generelt giver denne foreløbige model et fint indblik i dominerende tematikker, men yderligere arbejde er nødvendigt for bedre at kunne forstå, hvad emnerne reelt afspejler, hvordan de er forskellige, og om der er demografiske forskelle i, hvilke emner der bliver italesat.
+
+```{r}
+#| fig-cap: "Fordeling af emner på tværs af kanaler (alle emner)."
+#| label: fig-topic-density
+
+topic_df_g |> 
+  mutate(requester_channel = factor(case_match(
+    requester_channel,
+    "interview" ~ "Interview",
+    "letter" ~ "Brevkasse",
+    "sms" ~ "SMS",
+    "webchat" ~ "Webchat"
+  ), levels = c("Brevkasse", "SMS", "Webchat", "Interview"))) |> 
+  ggplot(aes(x = topic, weight = pct, fill = requester_channel, colour = requester_channel)) +
+    geom_density(alpha = 0.35, adjust = 1.1) + 
+    labs(x = "Emner (topic-id)", y = "Tæthed", fill = "Kanal", colour = "Kanal") +
+    scale_fill_brewer(type = "qual", palette = "Dark2") + 
+    scale_colour_brewer(type = "qual", palette = "Dark2") + 
+    theme_use
+
+```
+
+# Semantiske relationer i sprogbrug
+
+## Data brugt til modellerne
+
+Semantiske relationer er udledt via embeddingmodeller. Embeddingmodellerne er trænet udelukkende på chat- og sms-data fra brugere i alderen 10-16 år, og faste brugere er frasorteret. Kun beskeder fra brugeren indgår. Brevkassedata er ekskluderet ud fra en betragtning om, at samtaleformen og skrivestilen varierer markant fra chat- og sms.
+
+Teksterne er tokeniseret, dvs. opdelt i enkeltord, hvor tegnsætning fjernes, ord konverteres til ordstammer, og stopord udelades. Der er trænet tre modeller: én på alt materiale, én på drenge og én på piger. Personer, som identificerer sig som andet køn end dreng eller pige, er ikke inkluderet, da de udgjorde en meget lille gruppe. @tbl-emb-tokens viser, hvor mange tokens der indgår før og efter filtrering samt for de kønsspecifikke modeller.
+
+```{r}
+#| tbl-cap: "Data til embedding modeller."
+#| label: tbl-emb-tokens
+
+# Build summary table
+summary_tbl_emb <- tibble(
+  Summary = c(
+    "Total antal tokens",
+    "Antal tokens efter filtrering",
+    "Antal tokens - Drenge",
+    "Antal tokens - Piger"
+    ),
+  Value = c(
+    formatC(summaries$total_tokens[1], format = "d", big.mark = ".", decimal.mark = ","),
+    formatC(sum(lengths(corpus_all)), format = "d", big.mark = ".", decimal.mark = ","),
+    formatC(sum(lengths(corpus_male)), format = "d", big.mark = ".", decimal.mark = ","),
+    formatC(sum(lengths(corpus_female)), format = "d", big.mark = ".", decimal.mark = ",")
+  )
+)
+
+# Format with gt and custom number formatting
+summary_tbl_emb |>
+  gt() |>
+  opt_table_font(
+    font = list("serif")) |> 
+  cols_label(
+    Summary = "",
+    Value = ""
+  ) |> 
+  tab_header(title = "Data til embedding modeller")
+
+
+```
+
+## Metodisk baggrund
+
+Embeddingmodellerne forsøger for hvert ord at forudsige, hvilke ord der optræder i nærheden, og bruger en kontekst på 10 ord på hver side. Resultatet er en såkaldt "vægtvektor" på 100 tal for hvert ord, som afspejler, hvilke kontekster ordet typisk optræder i. Ord med lignende vægte tolkes som semantisk beslægtede. For at undersøge semantiske relationer, der der udledt de 10 mest semantisk beslægtede nøgleord for en række forud definerede nøgleord, som vurderes relevant ift. målgruppens sociale liv: forældre, venner, skole og hjem.
+
+```{r vizkeyem}
+#| include: false
+
+keyws_proj |> 
+  mutate(type = case_match(
+    model, 
+    "model_a" ~ "Al materiale",
+    "model_f" ~ "Piger",
+    "model_m" ~ "Drenge"
+  )) |> 
+  ggplot(aes(x = x, y = y, label = keyword, colour = type)) + 
+  geom_point(size = 0.5) + 
+  geom_text(nudge_y = 0.1) + 
+  scale_colour_brewer(type = "qual", palette = "Dark2") + 
+  labs(colour = "") + 
+  theme_use
+
+```
+
+## Kønsforskelle i semantiske relationer
+
+Vi sammenligner placeringen af nøgleord i de kønsspecifikke modeller for at se, om relationer og nærliggende ord varierer mellem drenge og piger. @fig-emb-gender er baseret på de 10 mest lignende ord til "mor, far, lærer, skole, klasse, veninde, forælder, hjem, hjemme, ven, kæreste" i begge kønsspecifikke modeller. Den giver foreløbige indsigter i centrale associationer til sociale roller og arenaer, og peger på tydelige kønsforskelle.
+
+```{r vizembedgen}
+#| include: false
+
+keyws_compare_use <- keyws_compare |> 
+  mutate(type = case_match(
+    model, 
+    "keyword" ~ "Keyword",
+    "model_f" ~ "Piger",
+    "model_m" ~ "Drenge"
+  ))
+
+ggplot(keyws_compare_use) + 
+  geom_point(aes(x=x, y=y, color = type), size=0.5, alpha=0.9) + 
+  geom_text(
+        data=filter(keyws_compare_use, is_keyword == TRUE),
+        mapping=aes(label=word, x=x, y=y),
+        size=3.5) + 
+    geom_text_repel(
+        data=filter(keyws_compare_use, is_keyword == FALSE),
+        mapping=aes(label=word, x=x, y=y, color=type), 
+        size=3,
+        max.overlaps = 15) + 
+  scale_colour_brewer(type = "qual", palette = "Dark2") + 
+  scale_y_continuous(breaks = seq(0,8, by = 0.5)) + 
+  scale_x_continuous(limits = c(-0.4, 0.4)) + 
+  geom_vline(xintercept=0, linetype='dashed', color='gray') +
+  labs(colour = "") + 
+  theme_use + 
+  theme(base_size = 10)
+```
+
+![Kønsforskelle i semantiske relationer baseret på top-10 mest lignende ord.](images/embeddings_word-relations_compare.png){#fig-emb-gender}
+
+# Modelvalidering
+
+## Baggrund
+
+Semantiske modeller evalueres normalt ud fra, om de indfanger de "forventede" relationer. Dog er formålet med denne analyse netop at få indblik i mulige semantiske relationer, som før har været overset, hvorfor relevant valideringsdata ikke findes. I stedet er robustheden af resultater undersøgt ved krydsvalidering. Der trænes 10 modeller, hvor 10 procent af data udelades i hver træning. Hver gang udledes de fem mest lignende ord for de forud definerede nøgleord. Overlap mellem disse ordlister måles med Jaccard-indekset, hvor 0 betyder intet overlap, og 1 betyder fuldt overlap. Højere værdier afspejler mere stabilitet på tværs af træninger, mens lavere værdier indikerer større variation.
+
+## Resultat af validering
+
+Resultaterne viser generelt lave gennemsnitlige Jaccard-indekser (@fig-jaccard), hvilket indikerer, at de fundne ord varierer meget mellem modeller, når små dele af data udelades. Det peger på, at de nuværende modeller endnu ikke er stabile nok til sikker fortolkning.
+
+```{r}
+#| fig-cap: "Jaccard-indeks for robusthed på tværs af modeller."
+#| label: fig-jaccard
+
+jac_ind |> 
+  mutate(type = case_match(
+    model, 
+    "all" ~ "Al materiale",
+    "female" ~ "Piger",
+    "male" ~ "Drenge"
+  )) |> 
+  ggplot(aes(x = jaccard_index, fill = type)) + 
+  geom_boxplot() + 
+  coord_flip() + 
+  labs(x = "Jaccard Index (overlap mellem ordsæt)", fill = "") + 
+  scale_fill_brewer(type = "qual", palette = "Dark2") + 
+  theme_use + 
+  theme(axis.text.x = element_blank(),   
+        axis.ticks.x = element_blank(),  
+        axis.title.x = element_blank())
+```
+
+# Videre arbejde
+
+I det videre arbejde fokuseres på embeddingmodellerne. De nuværende modeller er statiske embeddings, hvor hvert ord har én fast repræsentation uanset kontekst. Dynamiske (kontekstuelle) embeddings kan i stedet tilpasse repræsentationen til den konkrete sætning og fange variation i betydning på tværs af brugssituationer. Det kan forbedre både stabilitet og tolkbarhed, men kræver mere data og beregningskraft. Samtidig er der allerede indikationer af kønnede forskelle i semantiske relationer, som det er relevant at følge op med mere robuste og kontekstuelle modeller. Som vist er resultaterne dog ikke robuste, og indikerer behov for yderligere træningsdata, eller en opsætning, der udnytter andre tilgængelige sprogressourcer (som fx modeller, der i forvejen er trænet til "typiske" semantiske relationer på dansk).

@@ -5,3 +5,8 @@ models/
 output/
 topic_output/
 *__pycache__*
+*.html
+*ucdw_present_files*
+r/report/report_files
+r/report/report.tex
+r/report/report.log
